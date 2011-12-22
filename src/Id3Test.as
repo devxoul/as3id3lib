@@ -5,6 +5,8 @@ package
 	import flash.filesystem.FileStream;
 	import flash.utils.ByteArray;
 	
+	import kr.xoul.as3id3lib.Tag;
+	
 	public class Id3Test
 	{
 		private var _fileStream : FileStream = new FileStream;
@@ -35,6 +37,7 @@ package
 			log( "TPE1" );
 			log( "V2Artist" );
 			log( "TALB" );
+			log( "2222" );
 			
 			log( "TAG" );
 			log( "V1Title" );
