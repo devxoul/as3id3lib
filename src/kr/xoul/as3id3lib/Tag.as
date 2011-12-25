@@ -14,8 +14,9 @@ package kr.xoul.as3id3lib
 		public static const V2_ALBUM : String = "TALB";
 		public static const V2_YEAR : String = "TYER";
 		public static const V2_COMMNET : String = "COMM";
-		public static const V2_GENRE : String = "";
-		
+		public static const V2_TRACK : String = "TRCK";
+		public static const V2_COMPOSER : String = "TCOM";
+		public static const V2_UNSYNCHRONIZED_LYRICS : String = "USLT";
 	}
 }
 

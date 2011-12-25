@@ -1,195 +1,189 @@
 package kr.xoul.as3id3lib
 {
+	import flash.display.BitmapData;
 	import flash.filesystem.File;
 	import flash.filesystem.FileMode;
 	import flash.filesystem.FileStream;
+	import flash.system.JPEGLoaderContext;
 	import flash.utils.ByteArray;
+	import flash.utils.Dictionary;
 
 	public class ID3
 	{
-		/**  */
+		//
+		// public variables
+		//
+		
+		/** Specified whether the ID3v1 enabled. */
+		public var v1Enabled : Boolean;
+		
+		/** Specified whether the ID3v1 enabled. */
+		public var v2Enabled : Boolean;
+		
+		/** A character set. */
+		public var charSet : String = "UTF-8";
+		
+		/** A minor version of ID3v2. */
+		public var id3v2Version : int = 4;
+		
+		
+		//
+		// protected variables
+		//
+		
+		/** A music file. */
 		protected var _file : File = new File;
 		
 		/**  */
 		protected var _fileStream : FileStream = new FileStream;
 		
-		/**  */
+		/** A binary of music. */
 		protected var _byteArray : ByteArray;
 		
-		/**  */
-		protected var _bytes : Vector.<int>;
-				
+		/** A dictionary where ID3v1 data is stored. */
 		protected var _v1Data : Object;
-		protected var _v2Data : Object;
 		
-		protected var v1Enabled : Boolean;
-		protected var v2Enabled : Boolean;
+		/** A dictionary where ID3v2Frames are stored. */
+		protected var _v2Frames : Object;
+		
+		/** A size of ID3v2 tag specified in header. (6~9 bytes) */
+		protected var _sizeOfTag : int;
 		
 		
 		/**
 		 * Contructor.
-		 * @param file
-		 * 
+		 * @param file A music file.
+		 * @param charSet A character set.
 		 */		
-		public function ID3( file : File = null )
+		public function ID3( file : File = null, charSet : String = "UTF-8" )
 		{
+			this.charSet = charSet;
 			if( file ) open( file );
 		}
 		
 		/**
-		 * Open music file.
+		 * Open a music file.
 		 * @param file 
 		 * 
 		 */		
 		public function open( file : File ) : void
 		{
 			_byteArray = new ByteArray;
-			_bytes = new Vector.<int>;
 			_v1Data = {};
-			_v2Data = {};
+			_v2Frames = {};
 			v1Enabled = v2Enabled = false;
 			
 			_fileStream.open( _file = file, FileMode.READ );
+			
 			parse();
 		}
 		
-		protected function parse( byteArray : ByteArray = null ) : void // protected
+		/**
+		 * Parse ID3 tags.
+		 * 
+		 */		
+		protected function parse() : void
 		{
-			if( byteArray ) // tmp
-			{// tmp
-				trace( "bytearray is exists" ); //tmp
-				_byteArray = byteArray;// tmp
-				_byteArray.position = 0;//tmp
-				_bytes.length = 0; //tmp
-			}//tmp
-			else//tmp
-			{//tmp
-				_fileStream.readBytes( _byteArray, 0, _fileStream.bytesAvailable );
-				_byteArray.position = 0;
-			}//tmp
+			_fileStream.readBytes( _byteArray, 0, _fileStream.bytesAvailable );
+			_byteArray.position = 0;
 			
-			while( _byteArray.position < _byteArray.length )
-			{
-				var byte : int = _byteArray.readUnsignedByte();
-				_bytes.push( byte );
-			}
-			
+			parseV2();
 			parseV1();
 		}
 		
-		
 		/**
-		 * ID3v1은 먼저 파싱해놓고, v2는 getData를 호출할 때마다 파싱해서 저장해놓는다.
+		 * Parse ID3v2 tags.
 		 * 
 		 */		
-		protected function parseV1() : void
+		protected function parseV2() : void
 		{
-			var offset : int = getOffsetFromLast( convertStringToBytes( "TAG" ), _bytes );
-			trace( "v1 tag offset :", offset );
-			if( offset == -1 ) return;
-			v1Enabled = true;
-			_byteArray.position = offset + 3;
-			_v1Data[Tag.V1_SONG_NAME] = _byteArray.readUTFBytes( 30 );
-			_v1Data[Tag.V1_ARTIST] = _byteArray.readUTFBytes( 30 );
-			_v1Data[Tag.V1_ALBUM] = _byteArray.readUTFBytes( 30 );
-			_v1Data[Tag.V1_YEAR] = _byteArray.readUTFBytes( 4 );
-			_v1Data[Tag.V1_COMMENT] = _byteArray.readUTFBytes( 30 );
-			_v1Data[Tag.V1_GENRE] = _byteArray.readUTFBytes( 1 );
-		}
-				
-		
-		/**
-		 * 
-		 * @param str
-		 * @return 
-		 * 
-		 */		
-		protected function convertStringToBytes( str : String ) : Vector.<int>
-		{
-			var bytes : Vector.<int> = new Vector.<int>;
-			
-			for( var i : int = 0, len : int = str.length; i < len; i++ )
-				bytes.push( str.charCodeAt( i ) );
-			
-			return bytes;
-		}
-		
-		/**
-		 * 
-		 * @param pattern
-		 * @param original
-		 * @return 
-		 * 
-		 */		
-		protected function getOffset( pattern : Vector.<int>, original : Vector.<int>, startAt : int = 0 ) : int
-		{
-			for( var i : int = startAt, len : int = original.length - pattern.length; i < len; i++ )
+			_byteArray.position = 0;
+			if( _byteArray.readUTFBytes( 3 ) != "ID3" )
 			{
-				for( var j : int = 0; j < pattern.length; j++ )
-				{
-					if( original[i + j] == pattern[j] )
-					{
-						if( j == pattern.length - 1 )
-							return i;
-					}
-					else
-						break;
-				}
+				v2Enabled = false;
+				return;
 			}
-			
-			return -1;
-		}
-		
-		protected function getOffsetFromLast( pattern : Vector.<int>, original : Vector.<int> ) : int
-		{
-			for( var i : int = original.length - pattern.length; i >= 0; i-- )
-			{
-				for( var j : int = 0; j < pattern.length; j++ )
-				{
-					if( original[i + j] == pattern[j] )
-					{
-						if( j == pattern.length - 1 )
-							return i;
-					}
-					else
-						break;
-				}
-			}
-			
-			return -1;
-		}
-		
-		protected function isV1Tag( tag : String ) : Boolean
-		{
-			var firstCharCode : int = tag.charCodeAt( 0 );
-			if( 97 <= firstCharCode && firstCharCode <= 122 )
-				return true;
-			return false;
-		}
-		
-		public function getData( tag : String ) : Object
-		{
-			if( isV1Tag( tag ) )
-				return _v1Data[tag];
-			
-			if( _v2Data[tag] ) return _v2Data[tag];
-			
-			if( getOffset( convertStringToBytes( "ID3" ), _bytes ) == -1 )
-				return null;
 			
 			v2Enabled = true;
 			
-			var offset : int = getOffset( convertStringToBytes( tag ), _bytes );
-			if( offset == -1 ) return null;
+			_byteArray.position = 6;
+			_sizeOfTag = unsynchsafe( _byteArray.readUnsignedInt() ) + 10;
 			
-			_byteArray.position = offset + 4;
-			var size : int = _byteArray.readInt(); // Include null-byte
-			_byteArray.position += 3; // Flags + 1
-			_v2Data[tag] = _byteArray.readUTFBytes( size - 1 );
-			return _v2Data[tag];
+			_byteArray.position = 10;
+			while( _byteArray.position < _sizeOfTag )
+			{
+				var frame : ID3v2Frame = new ID3v2Frame;
+				frame.header = _byteArray.readUTFBytes( 4 );
+				if( frame.header == "" ) break;
+				frame.size = unsynchsafe( _byteArray.readUnsignedInt() );
+				_byteArray.position += 3; // flag + null byte
+				frame.data = _byteArray.readMultiByte( frame.size - 1, charSet );
+				
+				_v2Frames[frame.header] = frame;
+				
+				continue;
+				trace( "header :", frame.header );
+				trace( "size   :", frame.size );
+				trace( "data   :", frame.data );
+				trace( "pos    :", _byteArray.position );
+				trace( "---" );
+			}
 		}
 		
-		public function setData( tag : String, data : Object, flush : Boolean = false ) : void
+		/**
+		 * Parse ID3v1 tags.
+		 *
+		 */		
+		protected function parseV1() : void
+		{
+			_byteArray.position = _byteArray.length - 128;
+			if( _byteArray.readUTFBytes( 3 ) != "TAG" )
+			{
+				v1Enabled = false;
+				_v1Data[Tag.V1_SONG_NAME] = "";
+				_v1Data[Tag.V1_ARTIST] = "";
+				_v1Data[Tag.V1_ALBUM] = "";
+				_v1Data[Tag.V1_YEAR] = "";
+				_v1Data[Tag.V1_COMMENT] = "";
+				_v1Data[Tag.V1_GENRE] = "";
+				return;
+			}
+			
+			v1Enabled = true;
+			_v1Data[Tag.V1_SONG_NAME] = _byteArray.readMultiByte( 30, charSet );
+			_v1Data[Tag.V1_ARTIST] = _byteArray.readMultiByte( 30, charSet );
+			_v1Data[Tag.V1_ALBUM] = _byteArray.readMultiByte( 30, charSet );
+			_v1Data[Tag.V1_YEAR] = _byteArray.readUTFBytes( 4 );
+			_v1Data[Tag.V1_COMMENT] = _byteArray.readMultiByte( 30, charSet );
+			_v1Data[Tag.V1_GENRE] = _byteArray.readUTFBytes( 1 );
+		}
+		
+		/**
+		 * Get data from dictionary.
+		 * @param tag A key for data.
+		 * @return Data matching with tag.
+		 * 
+		 */		
+		public function getData( tag : String ) : Object
+		{
+			if( _v1Data[tag] )
+				return _v1Data[tag];
+			
+			if( _v2Frames[tag] )
+				return _v2Frames[tag].data;
+			
+			return null;
+		}
+		
+		/**
+		 * data가 BitmapData일 경우 따로 처리하는 로직 필요
+		 * 
+		 * @param tag A key for data.
+		 * @param data Data to be stored.
+		 * @param flush Specified whether call flush() method after set data.
+		 * 
+		 */		
+		public function setData( tag : String, data : String, flush : Boolean = false ) : void
 		{
 			if( isV1Tag( tag ) )
 			{
@@ -199,83 +193,32 @@ package kr.xoul.as3id3lib
 			else
 			{
 				v2Enabled = true;
-				_v2Data[tag] = data;
+				
+				if( _v2Frames[tag] )
+				{
+					_v2Frames[tag].data = data;
+				}
+				else
+				{
+					_v2Frames[tag] = new ID3v2Frame;
+					_v2Frames[tag].header = tag;
+				}
+				
+				_v2Frames[tag].size = getBytes( data );
+				_v2Frames[tag].data = data;
 			}
 			
 			if( flush ) this.flush();
 		}
 		
+		/**
+		 * Save ID3 tags to file.
+		 * 
+		 */		
 		public function flush() : void
 		{
-			// v1
-			var offset : int = getOffsetFromLast( convertStringToBytes( "TAG" ), _bytes );
-			
-			if( v1Enabled )
-			{
-				if( offset == -1 ) _byteArray.position = _byteArray.length;
-				_byteArray.position = offset;
-				
-				_byteArray.writeUTFBytes( "TAG" );
-				
-				writeV1WithLength( _v1Data[Tag.V1_SONG_NAME], 30 );
-				writeV1WithLength( _v1Data[Tag.V1_ARTIST], 30 );
-				writeV1WithLength( _v1Data[Tag.V1_ALBUM], 30 );
-				writeV1WithLength( _v1Data[Tag.V1_YEAR], 4 );
-				writeV1WithLength( _v1Data[Tag.V1_COMMENT], 30 );
-				writeV1WithLength( _v1Data[Tag.V1_GENRE], 1 );
-			}
-			else
-			{
-				_byteArray.length = offset;
-			}
-			
-			
-			// v2
-			
-			var ff : Vector.<int> = new Vector.<int>;
-			ff[0] = 0xFF;
-			offset = getOffset( ff, _bytes ); // Audio Frame이 시작되는 위치
-			trace( "offset :", offset );
-			
-			// Audio Frame이 시작되는 위치부터 끝까지 백업해둠
-			var audioFrameAndID3v1 : ByteArray = new ByteArray;
-			audioFrameAndID3v1.writeBytes( _byteArray, offset, _byteArray.length - offset );
-			audioFrameAndID3v1.position = 0;
-			
-			if( v2Enabled )
-			{
-				// byteArray 초기화 후 ID3v2 태그 입력 한 뒤 audioFrameAndID3v1를 붙임
-				_byteArray.length = 0;
-				_byteArray.writeUTFBytes( "ID34000000" );
-				
-				var lastData : String;
-				for( var tag : String in _v2Data )
-				{
-					_byteArray.writeUTFBytes( tag ); // Frame Identifier
-					_byteArray.writeUnsignedInt( _v2Data[tag].length + 1 ); // Size, 한글 주의
-					_byteArray.writeByte( 0 ); // Flag
-					_byteArray.writeByte( 0 ); // Flag
-					_byteArray.writeByte( 0 ); // null byte
-					_byteArray.writeUTFBytes( _v2Data[tag] );
-					lastData = _v2Data[tag];
-				}
-				
-				var num0 : int = 117 - lastData.length; // 한글 주의
-				
-				for( var i : int = 0; i < num0; i++ )
-					_byteArray.writeByte( 0 );
-				
-				var size : int = synchsafe( _byteArray.position ); // 여기(header)까지의 포지션이 헤더의 크기
-				
-				_byteArray.writeBytes( audioFrameAndID3v1, 0, audioFrameAndID3v1.length );
-				
-				_byteArray.position = 6; // size of tag
-				_byteArray.writeInt( size );
-			}
-			else
-			{
-				_byteArray = audioFrameAndID3v1;
-			}
+			flushV2();
+			flushV1();
 			
 			_fileStream.close();
 			_fileStream.open( _file, FileMode.WRITE );
@@ -286,15 +229,144 @@ package kr.xoul.as3id3lib
 			trace( "finish" );
 		}
 		
-		protected function writeV1WithLength( data : String, length : int ) : void // 한글 주의
+		/**
+		 * Write ID3v2 tags on _byteArray.<br />
+		 * 1. Backup audio data and ID3v1 data to audioAndID3v1Data.
+		 * 2. Clear _byteArray.<br />
+		 * 3. Write ID3v2 tags on _byteArray.<br />
+		 * 4. Write audioAndID3v1Data at end of _byteArray.<br /> 
+		 * 
+		 */		
+		protected function flushV2() : void
 		{
-			var dataLen : int = data.length;
+			// Audio Frame이 시작되는 위치부터 끝까지 백업해둠
+			var audioAndID3v1Data : ByteArray = new ByteArray;
+			audioAndID3v1Data.writeBytes( _byteArray, _sizeOfTag, _byteArray.length - _sizeOfTag );
+			audioAndID3v1Data.position = 0;
+			
+			if( v2Enabled )
+			{
+				// byteArray 초기화 후 ID3v2 태그 입력 한 뒤 audioAndID3v1Data를 붙임
+				// Clear _byteArray
+				_byteArray.length = 0;
+				_byteArray.writeUTFBytes( "ID3" );
+				_byteArray.writeByte( id3v2Version ); // version
+				_byteArray.writeByte( 0 ); // version
+				_byteArray.writeByte( 0 ); // flag
+				_byteArray.writeInt( 0 ); // size, will be changed after writing id3v2 data
+				
+				var frame : ID3v2Frame;
+				for each( frame in _v2Frames )
+				{
+					_byteArray.writeUTFBytes( frame.header ); // frame identifier
+					_byteArray.writeInt( synchsafe( frame.size + 1 ) ); // size
+					_byteArray.writeByte( 0 ); // flag
+					_byteArray.writeByte( 0 ); // flag
+					_byteArray.writeByte( 0 ); // null byte
+					_byteArray.writeMultiByte( frame.data, charSet );
+				}
+				
+				var totalFrameSize : int = _byteArray.position - 10;
+				var num0 : int;
+				if( totalFrameSize < 64 )
+				{
+					num0 = 128 - totalFrameSize;
+				}
+				else
+				{
+					for( var i : int = 0;; i++ )
+					{
+						if( 128 + 64 * i <= totalFrameSize * 2 && totalFrameSize * 2 < 128 + 64 * ( i + 1 ) )
+						{
+							num0 = 128 + 64 * ( i + 1 ) - totalFrameSize;
+							break;
+						}
+					}
+				}
+				
+				for( i = 0; i < num0; i++ )
+					_byteArray.writeByte( 0 );
+				
+				var size : int = synchsafe( _byteArray.position - 10 ); // size of id3v2 data (except for the header)
+				
+				_byteArray.writeBytes( audioAndID3v1Data, 0, audioAndID3v1Data.length );
+				
+				_byteArray.position = 6; // size of tag
+				_byteArray.writeInt( size );
+			}
+			else
+			{
+				_byteArray = audioAndID3v1Data;
+			}
+		}
+		
+		/**
+		 * Write ID3v1 tags on _byteArray after clearing ID3v1 tags.<br />
+		 * 
+		 */		
+		protected function flushV1() : void
+		{			
+			// delete ID3v1 data
+			_byteArray.position = _byteArray.length - 128;
+			if( _byteArray.readUTFBytes( 3 ) == "TAG" )
+				_byteArray.length -= 128;
+			
+			_byteArray.position = _byteArray.length;
+			
+			if( v1Enabled )
+			{
+				_byteArray.writeUTFBytes( "TAG" );
+				
+				writeV1WithLength( _v1Data[Tag.V1_SONG_NAME], 30 );
+				writeV1WithLength( _v1Data[Tag.V1_ARTIST], 30 );
+				writeV1WithLength( _v1Data[Tag.V1_ALBUM], 30 );
+				writeV1WithLength( _v1Data[Tag.V1_YEAR], 4 );
+				writeV1WithLength( _v1Data[Tag.V1_COMMENT], 30 );
+				writeV1WithLength( _v1Data[Tag.V1_GENRE], 1 );
+			}
+			
+		}
+		
+		
+		//
+		// Utils
+		//
+		
+		/**
+		 * 
+		 * @param tag
+		 * @return 
+		 * 
+		 */		
+		protected function isV1Tag( tag : String ) : Boolean
+		{
+			var firstCharCode : int = tag.charCodeAt( 0 );
+			if( 97 <= firstCharCode && firstCharCode <= 122 )
+				return true;
+			return false;
+		}
+		
+		/**
+		 * 
+		 * @param data
+		 * @param length
+		 * 
+		 */		
+		protected function writeV1WithLength( data : String, length : int ) : void
+		{
+			var dataLen : int = getBytes( data );
 			var num0 : int = length - dataLen;
-			_byteArray.writeUTFBytes( data );
+			_byteArray.writeMultiByte( data, charSet );
 			for( var i : int = 0; i < num0; i++ )
 				_byteArray.writeByte( 0 );
 		}
 		
+		/**
+		 * 
+		 * @param num
+		 * @return 
+		 * 
+		 */		
 		protected function synchsafe( num : int ) : int
 		{
 			var out : int;
@@ -310,6 +382,39 @@ package kr.xoul.as3id3lib
 			}
 			
 			return out;
+		}
+		
+		/**
+		 * 
+		 * @param num
+		 * @return 
+		 * 
+		 */		
+		protected function unsynchsafe( num : int ) : int
+		{
+			var out : int = 0;
+			var mask : int = 0x7F000000;
+			
+			while( mask ) {
+				out >>= 1;
+				out |= num & mask;
+				mask >>= 8;
+			}
+			
+			return out;
+		}
+		
+		/**
+		 * 
+		 * @param data
+		 * @return 
+		 * 
+		 */		
+		protected function getBytes( data : String ) : uint
+		{
+			var ba : ByteArray = new ByteArray;
+			ba.writeMultiByte( data, charSet );
+			return ba.length;
 		}
 	}
 }
