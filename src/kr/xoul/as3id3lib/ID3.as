@@ -1,12 +1,9 @@
 package kr.xoul.as3id3lib
 {
-	import flash.display.BitmapData;
 	import flash.filesystem.File;
 	import flash.filesystem.FileMode;
 	import flash.filesystem.FileStream;
-	import flash.system.JPEGLoaderContext;
 	import flash.utils.ByteArray;
-	import flash.utils.Dictionary;
 
 	public class ID3
 	{
@@ -46,7 +43,7 @@ package kr.xoul.as3id3lib
 		/** A dictionary where ID3v2Frames are stored. */
 		protected var _v2Frames : Object;
 		
-		/** A size of ID3v2 tag specified in header. (6~9 bytes) */
+		/** A size of ID3v2 tag. (include header) */
 		protected var _sizeOfTag : int;
 		
 		
@@ -68,10 +65,12 @@ package kr.xoul.as3id3lib
 		 */		
 		public function open( file : File ) : void
 		{
+			v1Enabled = v2Enabled = false;
+			
 			_byteArray = new ByteArray;
 			_v1Data = {};
 			_v2Frames = {};
-			v1Enabled = v2Enabled = false;
+			_sizeOfTag = 0;
 			
 			_fileStream.open( _file = file, FileMode.READ );
 			
@@ -97,7 +96,6 @@ package kr.xoul.as3id3lib
 		 */		
 		protected function parseV2() : void
 		{
-			_byteArray.position = 0;
 			if( _byteArray.readUTFBytes( 3 ) != "ID3" )
 			{
 				v2Enabled = false;
@@ -106,10 +104,9 @@ package kr.xoul.as3id3lib
 			
 			v2Enabled = true;
 			
-			_byteArray.position = 6;
-			_sizeOfTag = unsynchsafe( _byteArray.readUnsignedInt() ) + 10;
+			_byteArray.position = 6; // size
+			_sizeOfTag = unsynchsafe( _byteArray.readUnsignedInt() ) + 10; // include header
 			
-			_byteArray.position = 10;
 			while( _byteArray.position < _sizeOfTag )
 			{
 				var frame : ID3v2Frame = new ID3v2Frame;
@@ -117,7 +114,7 @@ package kr.xoul.as3id3lib
 				if( frame.header == "" ) break;
 				frame.size = unsynchsafe( _byteArray.readUnsignedInt() );
 				_byteArray.position += 3; // flag + null byte
-				frame.data = _byteArray.readMultiByte( frame.size - 1, charSet );
+				_byteArray.readBytes( frame.data, 0, frame.size - 1 );
 				
 				_v2Frames[frame.header] = frame;
 				
@@ -170,6 +167,26 @@ package kr.xoul.as3id3lib
 				return _v1Data[tag];
 			
 			if( _v2Frames[tag] )
+			{
+				_v2Frames[tag].data.position = 0;
+				return _v2Frames[tag].data.readMultiByte( _v2Frames[tag].data.length, charSet );
+			}
+			
+			return null;
+		}
+		
+		/**
+		 * 
+		 * @param tag
+		 * @return 
+		 * 
+		 */		
+		public function getRawData( tag : String ) : ByteArray
+		{
+			if( _v1Data[tag] )
+				return null;
+			
+			if( _v2Frames[tag] )
 				return _v2Frames[tag].data;
 			
 			return null;
@@ -194,18 +211,48 @@ package kr.xoul.as3id3lib
 			{
 				v2Enabled = true;
 				
-				if( _v2Frames[tag] )
-				{
-					_v2Frames[tag].data = data;
-				}
-				else
+				if( !_v2Frames[tag] )
 				{
 					_v2Frames[tag] = new ID3v2Frame;
 					_v2Frames[tag].header = tag;
 				}
 				
 				_v2Frames[tag].size = getBytes( data );
-				_v2Frames[tag].data = data;
+				_v2Frames[tag].data.length = 0;
+				_v2Frames[tag].data.writeMultiByte( data, charSet );
+			}
+			
+			if( flush ) this.flush();
+		}
+		
+		/**
+		 * 
+		 * @param tag
+		 * @param data
+		 * @param flush
+		 * 
+		 */		
+		public function setRawData( tag : String, data : ByteArray, flush : Boolean = false ) : void
+		{
+			data.position = 0;
+			
+			if( isV1Tag( tag ) )
+			{
+				return;
+			}
+			else
+			{
+				v2Enabled = true;
+				
+				if( !_v2Frames[tag] )
+				{
+					_v2Frames[tag] = new ID3v2Frame;
+					_v2Frames[tag].header = tag;
+				}
+				
+				_v2Frames[tag].size = data.length;
+				_v2Frames[tag].data.length = 0;
+				_v2Frames[tag].data.writeBytes( data, 0, data.length );
 			}
 			
 			if( flush ) this.flush();
@@ -243,12 +290,10 @@ package kr.xoul.as3id3lib
 			var audioAndID3v1Data : ByteArray = new ByteArray;
 			audioAndID3v1Data.writeBytes( _byteArray, _sizeOfTag, _byteArray.length - _sizeOfTag );
 			audioAndID3v1Data.position = 0;
+			_byteArray.length = 0;
 			
 			if( v2Enabled )
 			{
-				// byteArray 초기화 후 ID3v2 태그 입력 한 뒤 audioAndID3v1Data를 붙임
-				// Clear _byteArray
-				_byteArray.length = 0;
 				_byteArray.writeUTFBytes( "ID3" );
 				_byteArray.writeByte( id3v2Version ); // version
 				_byteArray.writeByte( 0 ); // version
@@ -263,7 +308,7 @@ package kr.xoul.as3id3lib
 					_byteArray.writeByte( 0 ); // flag
 					_byteArray.writeByte( 0 ); // flag
 					_byteArray.writeByte( 0 ); // null byte
-					_byteArray.writeMultiByte( frame.data, charSet );
+					_byteArray.writeBytes( frame.data, 0, frame.data.length );
 				}
 				
 				var totalFrameSize : int = _byteArray.position - 10;
@@ -296,7 +341,7 @@ package kr.xoul.as3id3lib
 			}
 			else
 			{
-				_byteArray = audioAndID3v1Data;
+				_byteArray.writeBytes( audioAndID3v1Data, 0, audioAndID3v1Data.length );
 			}
 		}
 		
